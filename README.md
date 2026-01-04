@@ -5,7 +5,7 @@ Speedtest（Ookla公式CLI）で定期計測し、結果を PostgreSQL に保存
 
 - 計測: `speedtest`（Ookla公式CLI）
 - 保存: PostgreSQL
-- 可視化: Grafana（インストールしてDataSource追加でOK）
+- 可視化: Grafana（.deb パッケージでインストール）
 
 > ※本構成は「インターネット回線速度（ISP速度）」の計測です。宅内LANだけを測りたい場合は iperf3 構成が適します。
 
@@ -23,7 +23,7 @@ Speedtest（Ookla公式CLI）で定期計測し、結果を PostgreSQL に保存
 
 - Ubuntu 22.04 / 24.04（他でも概ね同様）
 - PostgreSQL（例: 14+）
-- Grafana（初期設定でOK）
+- Grafana（.debパッケージで導入）
 - Ookla Speedtest CLI（`speedtest`）
 - `jq`
 - `psql`（PostgreSQLクライアント）
@@ -36,209 +36,175 @@ Speedtest（Ookla公式CLI）で定期計測し、結果を PostgreSQL に保存
 
 ```bash
 sudo apt update
-sudo apt install -y jq postgresql postgresql-client grafana curl
-```
-
-### Speedtest（Ookla）をインストール
-
-```bash
-curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
-sudo apt install -y speedtest
-```
-
-動作確認（ライセンス同意が求められる場合あり）:
-
-```bash
-speedtest --version
-speedtest --format=json | head
+sudo apt install -y curl jq tar ca-certificates postgresql postgresql-client
 ```
 
 ---
 
-## PostgreSQL 初期設定
+## Speedtest（Ookla）を「バイナリ（tgz）」でインストール
 
-ここでは以下で作成します。
+APTリポジトリ方式でのインストールがうまく行かなかったため、バイナリインストールを行いました。<br>
+ダウンロード方法は公式サイトを参考にダウンロードしてください
 
-- DB名: `net_speed`
-- DBユーザー: `netmon`
+`https://www.speedtest.net/apps/cli`
 
-### ユーザー/DB作成
+### アーキテクチャ確認
 
 ```bash
-sudo -u postgres psql
+uname -m
 ```
 
-```sql
-CREATE USER netmon WITH PASSWORD 'CHANGE_ME';
-CREATE DATABASE net_speed OWNER netmon;
-\q
+- `x86_64` → `linux-x86_64`
+- `aarch64` → `linux-aarch64`
+- `armv7l` → `linux-armhf`
+- `i386` → `linux-i386`
+---
+
+## Grafana を「公式サイトの .deb パッケージ」でインストール
+
+APTリポジトリではなく、公式サイトから `.deb` をダウンロードしてインストールします。
+
+- ブラウザで `https://grafana.com/grafana/download` を開き、
+  - OS: Debian / Ubuntu
+  - Edition: OSS or Enterprise
+  - Version: 任意
+  を選んで **.deb のリンクをコピー**します。
+- インストール方法はリンクに記載された方法に従ってください
+
+###  grafana動作確認
+
+```bash
+sudo systemctl enable --now grafana-server
+systemctl status grafana-server --no-pager
+```
+
+ブラウザでアクセス：
+
+- `http://<計測端末のIP>:3000`
+
+---
+
+## PostgreSQL 初期設定（検証環境の復元）
+
+このREADMEの目的は **「使える検証環境を作る」**ことです。  
+本リポジトリ同梱の **サンプル（ロール作成SQL / ダンプ）** を使って、ロールとDBデータを復元します。
+
+> ここではテーブルを手作業でCREATEしません（pg_dump の結果から復元します）。
+
+### 1) 同梱ファイルの前提（例）
+
+以下のようなファイルがリポジトリ内にある想定です（名称/場所は実態に合わせて読み替え）：
+
+- `work/globals.sql` … ロール/権限（pg_dumpall --globals-only の結果）
+- `work/net_speed.dump` … DB本体（pg_dump -Fc の結果）
+
+### 2) ロール（ユーザー/権限）を復元
+
+```bash
+sudo -u postgres psql -f work/globals.sql
+```
+
+### 3) DB本体（データ込み）を復元
+
+> `pg_dump -Fc` のダンプには通常 DB作成が含まれません（`-C` を付けた場合を除く）。  
+> DBがまだ無い場合だけ作成してください。
+
+```bash
+# DBが存在しない場合のみ（OWNERはglobals.sqlで作られたロールに合わせる）
+sudo -u postgres createdb -O netmon net_speed
+```
+
+復元：
+
+```bash
+sudo -u postgres pg_restore -d net_speed work/net_speed.dump
+```
+
+復元確認：
+
+```bash
+sudo -u postgres psql -d net_speed -c "\dt"
+sudo -u postgres psql -d net_speed -c "SELECT count(*) FROM speedtest_logs;"
 ```
 
 ---
 
-## テーブル作成（スキーマ）
+## .pgpass の作り方（パスワード入力を省略）
 
-`sql/schema.sql` を用意している前提（無い場合は下の例を利用）。
+スクリプトから `psql` を叩く場合、`.pgpass` を使うとパスワード入力なしで接続できます。
 
-### スキーマ適用
+### 1) 作成
+
+個人用のため、netmonのパスワードはpasswordで設定してます<br>
+`localhost:5432:net_speed:netmon:password`の部分は適宜環境に応じて変えてください。<br>
+ただし、ここを変える場合はshファイルとDBのロールのパスワードも書き換えてください。
 
 ```bash
-psql -U netmon -d net_speed -f sql/schema.sql
+cat > ~/.pgpass <<'EOF'
+localhost:5432:net_speed:netmon:password
+EOF
+chmod 600 ~/.pgpass
 ```
-
-### schema.sql（例）
-
-```sql
-CREATE TABLE IF NOT EXISTS speedtest_logs (
-  id            BIGSERIAL PRIMARY KEY,
-  measured_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-  -- 有線/無線の区別（任意）
-  link_type      TEXT NOT NULL DEFAULT 'unknown', -- wired / wifi / unknown
-  interface_name TEXT,
-  ssid           TEXT,
-
-  -- 計測値（Mbps / ms）
-  download_mbps DOUBLE PRECISION,
-  upload_mbps   DOUBLE PRECISION,
-  ping_ms       DOUBLE PRECISION,
-
-  -- 付加情報
-  server_name   TEXT,
-  raw_json      JSONB
-);
-
-CREATE INDEX IF NOT EXISTS speedtest_logs_time_idx
-  ON speedtest_logs (measured_at);
-
-CREATE INDEX IF NOT EXISTS speedtest_logs_link_time_idx
-  ON speedtest_logs (link_type, measured_at);
-```
-
 ---
 
 ## 計測スクリプト設定
 
 リポジトリの `speedtest_to_pg.sh` を使用します。
 
-### 実行権限付与
+### 権限付与と動作確認
 
+- 権限付与
 ```bash
 chmod +x ./speedtest_to_pg.sh
 ```
 
-### 環境変数ファイル（.env）を作成（推奨）
 
-> `.env` は秘密情報（パスワード等）を含むため **Gitにコミットしない** でください。
 
-```bash
-cat > .env <<'EOF'
-DB_HOST=localhost
-DB_NAME=net_speed
-DB_USER=netmon
-DB_PASS=CHANGE_ME
-
-# 任意：有線/無線の識別情報
-LINK_TYPE=wifi
-IFACE_NAME=wlan0
-SSID=home_wifi
-EOF
-```
-
-`.gitignore` に追加:
+- 動作確認
+- 実行前にファイル内のlogfileの部分を書き換えてください
 
 ```bash
-echo ".env" >> .gitignore
-```
-
-### 手動実行で動作確認
-
-```bash
-set -a
-source .env
-set +a
-
 ./speedtest_to_pg.sh
 ```
 
 DBに入ったか確認:
 
 ```bash
-psql -U netmon -d net_speed -c \
-"SELECT measured_at, link_type, download_mbps, upload_mbps, ping_ms FROM speedtest_logs ORDER BY measured_at DESC LIMIT 5;"
+psql -h localhost -U netmon -d net_speed -c "SELECT * FROM speedtest_logs ORDER BY measured_at DESC LIMIT 5;"
 ```
-
 ---
 
-## 定期実行（systemd timer 推奨）
+## 定期実行
 
-`systemd/` に `net-speed.service` と `net-speed.timer` を置く想定です。
+CRONを設定して定期実行する。
 
-### systemd設定を配置
+### 設定方法
 
+Crontabを編集。最初はどのエディタを使うか聞かれるため、好きなものを選ぶ（nanoがおすすめ）
 ```bash
-sudo cp systemd/net-speed.service systemd/net-speed.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now net-speed.timer
+crontab -e
 ```
-
-状態確認:
-
-```bash
-systemctl status net-speed.timer --no-pager
-journalctl -u net-speed.service -n 50 --no-pager
+Crontab設定内容
+``` bash
+PATH=/usr/local/bin:/usr/bin:/bin
+## 定期実行するタイミング、1時間ごとで設定する場合の書き方
+0 * * * * /home/nora/speedtest_to_pg.sh
 ```
-
-### systemd設定例
-
-`systemd/net-speed.service`
-
-```ini
-[Unit]
-Description=Network speed measurement (speedtest -> postgres)
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/exia/net_speed
-EnvironmentFile=/home/exia/net_speed/.env
-ExecStart=/home/exia/net_speed/speedtest_to_pg.sh
+### 動作確認
+直近の時刻（分　時間）を設定してログ、DBを確認して挿入がされているかを確認する。
+``` bash
+46 22 * * * /home/nora/speedtest_to_pg.sh
 ```
-
-`systemd/net-speed.timer`
-
-```ini
-[Unit]
-Description=Run network speed measurement hourly
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-> `WorkingDirectory` と `EnvironmentFile` と `ExecStart` は環境に合わせて変更してください。
 
 ---
 
 ## Grafana 設定（初期設定でOK）
 
-### Grafana起動
-
-```bash
-sudo systemctl enable --now grafana-server
-```
-
-ブラウザで以下へアクセス:
-
-- `http://<計測端末のIP>:3000`
-
 ### PostgreSQL DataSource 追加
 
 Grafana → **Connections / Data sources** → **PostgreSQL**
 
-- Host: `localhost:5432`
+- Host: `localhost:5432`（GrafanaとPostgreSQLが同一ホストの場合）
 - Database: `net_speed`
 - User: `netmon`
 - Password: `.env` の `DB_PASS`
@@ -285,24 +251,19 @@ ORDER BY 1;
 
 ## よくあるエラー
 
-### `permission denied for sequence ...`
+### `Peer authentication failed for user "netmon"`
 
-INSERT時にシーケンス権限がない場合があります。以下で付与します。
+`psql -U netmon` で失敗する場合、ローカルソケット接続が `peer` 認証になっている可能性があります。  
+host を指定してTCP接続にしてください。
 
 ```bash
-sudo -u postgres psql -d net_speed
+psql -h 127.0.0.1 -U netmon -d net_speed
 ```
 
-```sql
-GRANT INSERT, SELECT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO netmon;
-GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO netmon;
-```
+### `Configuration - Couldn't resolve host name`（speedtest）
 
-個別に付与する場合（例）:
-
-```sql
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE speedtest_logs_id_seq TO netmon;
-```
+DNSが壊れていると speedtest が設定を取得できず失敗します。  
+`ping 8.8.8.8` が通るのに `curl https://www.speedtest.net/` が失敗する場合は DNS 問題です。
 
 ---
 
@@ -311,25 +272,16 @@ GRANT USAGE, SELECT, UPDATE ON SEQUENCE speedtest_logs_id_seq TO netmon;
 稼働中でも `pg_dump` で取得できます。
 
 ```bash
-pg_dump -Fc -d net_speed -f net_speed_$(date +%F).dump
-pg_dumpall --globals-only -f globals_$(date +%F).sql
+sudo -u postgres pg_dump -Fc -d net_speed -f /var/tmp/net_speed_$(date +%F).dump
+sudo -u postgres pg_dumpall --globals-only -f /var/tmp/globals_$(date +%F).sql
 ```
 
-復元:
+復元（例）:
 
 ```bash
-psql -f globals_YYYY-MM-DD.sql
-createdb -O netmon net_speed
-pg_restore -d net_speed net_speed_YYYY-MM-DD.dump
+sudo -u postgres psql -f /var/tmp/globals_YYYY-MM-DD.sql
+sudo -u postgres createdb -O netmon net_speed
+sudo -u postgres pg_restore -d net_speed /var/tmp/net_speed_YYYY-MM-DD.dump
 ```
 
 ---
-
-## GitにREADMEを上げる
-
-```bash
-git add README.md
-git commit -m "Add README"
-git push origin main
-```
-
