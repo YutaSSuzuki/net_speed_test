@@ -1,4 +1,4 @@
-# ネットワーク可視化（Speedtest + PostgreSQL + Grafana）
+# 整備中ネットワーク可視化（Speedtest + PostgreSQL + Grafana）
 
 家庭内ネットワークの速度低下を「見える化」するための構成です。  
 Speedtest（Ookla公式CLI）で定期計測し、結果を PostgreSQL に保存し、Grafana で可視化します。
@@ -8,6 +8,13 @@ Speedtest（Ookla公式CLI）で定期計測し、結果を PostgreSQL に保存
 - 可視化: Grafana（.deb パッケージでインストール）
 
 > ※本構成は「インターネット回線速度（ISP速度）」の計測です。宅内LANだけを測りたい場合は iperf3 構成が適します。
+
+---
+## 後日整備する
+- gitのファイル構成
+- DBのスキーマのみのダンプ取得
+- DBのiface、hostに挿入する内容がnullか、値を入れるかを統一していないため、統一する
+- wireless、有線の計測をするための手順書になっていないため、その内容を記載する
 
 ---
 
