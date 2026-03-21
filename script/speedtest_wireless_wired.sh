@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # ===== 設定 =====
 DB_HOST="localhost"
 DB_NAME="net_speed"
 DB_USER="netmon"
-LOG_FILE="$HOME/net_speed/speed_log/speedtest_agent.log"
+LOG_FILE="$REPO_DIR/speed_log/speedtest_agent.log"
 
 # ★ あなたの環境に合わせて変更
 WIFI_IF="wlp2s0"
 WIRED_IF="enp0s31f6"
 # =================
 
+mkdir -p "$(dirname "$LOG_FILE")"
 
 run_one() {
-  local link_type="$1"  # wifi / wired
+  local link_type="$1"  # wireless / wired
   local iface="$2"      # 例: wlp2s0, enp0s31f6
 
   echo "[$(date)] --- ${link_type} test start (iface=${iface}) ---"
@@ -62,7 +68,7 @@ run_one() {
 INSERT INTO speedtest_logs
   (measured_at, download_mbps, upload_mbps, ping_ms, link_type, iface, host)
 VALUES
-  (NOW(), $DOWN_MBPS, $UP_MBPS, $PING_MS, '${link_type}', '${iface}', '${HOSTNAME_STR}');
+  (NOW(), $DOWN_MBPS, $UP_MBPS, $PING_MS, '${link_type}', '${iface}', NULL);
 EOF
 
   if [ $? -ne 0 ]; then

@@ -2,7 +2,7 @@
 -- PostgreSQL database cluster dump
 --
 
-\restrict SVVwP5OtQya3zI59bfznwArf6kxwBTbgm2ohiMHnC5xyeE9jnbIh8Mi2QpeLlTH
+\restrict NzsnBw4chOow336cN177szJcVDhqWCl03c6UNDb09WfDxcSjsI77AgmtjhcnTrL
 
 SET default_transaction_read_only = off;
 
@@ -14,9 +14,7 @@ SET standard_conforming_strings = on;
 --
 
 CREATE ROLE netmon;
-ALTER ROLE netmon WITH NOSUPERUSER INHERIT NOCREATEROLE NOCREATEDB LOGIN NOREPLICATION NOBYPASSRLS PASSWORD 'SCRAM-SHA-256$4096:JnuSFQRITTAG5GRuv/YvwA==$j6pJoUtqYPzZA/OOmf71FS4Gu/eTPP3PpXlDu0gUu9w=:cg2bXD1tpQRvVts68bpOsacwmVZZ1ZY3BBrBnyg7YpM=';
-CREATE ROLE postgres;
-ALTER ROLE postgres WITH SUPERUSER INHERIT CREATEROLE CREATEDB LOGIN REPLICATION BYPASSRLS;
+ALTER ROLE netmon WITH NOSUPERUSER INHERIT NOCREATEROLE NOCREATEDB LOGIN NOREPLICATION NOBYPASSRLS PASSWORD 'password';
 
 --
 -- User Configurations
@@ -29,9 +27,8 @@ ALTER ROLE postgres WITH SUPERUSER INHERIT CREATEROLE CREATEDB LOGIN REPLICATION
 
 
 
-\unrestrict SVVwP5OtQya3zI59bfznwArf6kxwBTbgm2ohiMHnC5xyeE9jnbIh8Mi2QpeLlTH
+\unrestrict NzsnBw4chOow336cN177szJcVDhqWCl03c6UNDb09WfDxcSjsI77AgmtjhcnTrL
 
 --
 -- PostgreSQL database cluster dump complete
 --
-
